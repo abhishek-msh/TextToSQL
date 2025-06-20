@@ -225,7 +225,6 @@ class biAssistant:
             f"[biAssistant][get_answer][{self.conversation_analytics.conversationID}] - SQL query generated"
         )
 
-        # yield f"[LOGS] - Validating SQL query"
         self.conversation_analytics.sqlQuery = (
             f"SET useMultistageEngine=true; {self.conversation_analytics.sqlQuery}"
         )
