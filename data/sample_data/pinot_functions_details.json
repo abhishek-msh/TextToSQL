@@ -1,0 +1,12 @@
+[
+    {
+        "functionName": "FromEpoch",
+        "functionDescription": "The `FromEpoch` function converts a given epoch value, represented in specific time units (SECONDS, MINUTES, HOURS, or DAYS), into epoch milliseconds. This can be useful for standardizing epoch time into milliseconds for consistent handling in time-based computations. \n\n### Signature\n`FromEpoch<TIME_UNIT>(timeIn<Time_UNIT>)`\n\n### Usage Examples\n- **Convert Seconds to Milliseconds**: \n   ```sql\n   select FromEpochSeconds(1613472303) AS epochMillis\n   ```\n   Result: `1613472303000`\n\n- **Convert Minutes to Milliseconds**:\n   ```sql\n   select FromEpochMinutes(26891205) AS epochMillis\n   ```\n   Result: `1613472300000`\n\n- **Convert Hours to Milliseconds**:\n   ```sql\n   select FromEpochHours(448186) AS epochMillis\n   ```\n   Result: `1613469600000`\n\n- **Convert Days to Milliseconds**:\n   ```sql\n   select FromEpochDays(18674) AS epochMillis\n   ```\n   Result: `1613433600000`\n\nBy using the appropriate time unit-specific function (`FromEpochSeconds`, `FromEpochMinutes`, `FromEpochHours`, `FromEpochDays`), users can easily handle and manipulate time data in milliseconds across different epoch input formats.",
+        "functionSignature": "> FromEpoch\\<TIME\\_UNIT>(timeIn\\<Time\\_UNIT>)"
+    },
+    {
+        "functionName": "STPOINT",
+        "functionDescription": "The `STPOINT` (or `ST_POINT`) function in Apache Pinot generates a point object in either geometry or geography format based on the specified coordinates. It accepts two or three arguments: the `x` (longitude) and `y` (latitude) values, and an optional `isGeography` flag. When the flag is set to `1`, it creates a geography-type point object; when set to `0` or omitted, it defaults to a geometry-type point object. This function facilitates spatial data processing and representation of points on maps or geospatial grids. Example usages demonstrate how the function outputs encoded point objects for the given coordinates.",
+        "functionSignature": "> STPOINT(x, y)\n>\n> STPOINT(x, y, isGeography)\n>\n> ST\\_POINT(x, y)\n>\n> ST\\_POINT(x, y, isGeography)"
+    }
+]

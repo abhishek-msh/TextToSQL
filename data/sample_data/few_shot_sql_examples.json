@@ -1,0 +1,10 @@
+[
+  {
+    "question": "Question1",
+    "sqlQuery": "SQL1"
+  },
+  {
+    "question": "Question2",
+    "sqlQuery": "SQL2"
+  }
+]

@@ -1,0 +1,24 @@
+{
+  "<ABC_TABLE_NAME>": {
+    "columns": {
+      "<A_COL_NAME>": {
+        "type": "",
+        "isPrimaryKey": true,
+        "sampleValues": "",
+        "columnDescription": ""
+      }
+    },
+    "tableDescription": ""
+  },
+  "<XYZ_TABLE_NAME>": {
+    "columns": {
+      "<A_COL_NAME>": {
+        "type": "",
+        "isPrimaryKey": true,
+        "sampleValues": "",
+        "columnDescription": ""
+      },
+      "tableDescription": ""
+    }
+  }
+}

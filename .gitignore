@@ -1,0 +1,27 @@
+# Exclude __pycache__ folders
+__pycache__/
+
+# Exclude .ipynb_checkpoints folders
+.ipynb_checkpoints/
+
+# Exclude vscode configs
+.vscode/
+
+# Exclude virtual environment
+.venv/
+
+# Exclude environment file
+.env
+
+# Exclude local log
+log.txt
+
+# Exclude ipynb notebooks
+*.ipynb
+*.ipynb_checkpoints
+notebooks/
+
+# Exclude logs results
+*.log
+
+*.db
