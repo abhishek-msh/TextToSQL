@@ -59,7 +59,7 @@ class biAssistant:
             f"[biAssistant][get_answer][{self.conversation_analytics.conversationID}] - Start"
         )
 
-        question_column_name = "userTextRephrased"
+        question_column_name = "userText"
 
         sql_query = f"""SELECT {question_column_name}, answer, error FROM {SqlConfig().CONVERSATION_ANALYTICS_TABLE} WHERE userID = '{self.conversation_analytics.userID}' and sessionID = '{self.conversation_analytics.sessionID}' ORDER BY _ts desc LIMIT 2;"""
 
@@ -137,7 +137,7 @@ class biAssistant:
                 collection_name=MilvusConfig().MILVUS_TABLE_COLLECTION_NAME,
                 text_embedding=query_embedding,
                 return_fields=MilvusConfig().MILVUS_TABLE_RETURN_FIELDS,
-                top_k=5,
+                top_k=MilvusConfig().MILVUS_TOP_TABLES_K,
             )
         )
         for record in table_retrieved_data[0]:
@@ -154,7 +154,8 @@ class biAssistant:
                 collection_name=MilvusConfig().MILVUS_COLUMN_COLLECTION_NAME,
                 text_embedding=query_embedding,
                 return_fields=MilvusConfig().MILVUS_COLUMN_RETURN_FIELDS,
-                top_k=len(self.retrieval_logs.relevantTables) * 3,
+                top_k=len(self.retrieval_logs.relevantTables)
+                * MilvusConfig().MILVUS_TOP_COLUMNS_K,
                 filter_expr=column_filter_expr,
             )
         )
@@ -167,16 +168,17 @@ class biAssistant:
             f"[biAssistant][get_answer][{self.conversation_analytics.conversationID}] - Relevant columns retrieved"
         )
         # STEP 4 : SQL Example Vector search
-        sql_example_filter_expr = (
-            f'tenantID == "{self.conversation_analytics.tenantId}"'
-        )
+        # sql_example_filter_expr = (
+        #     f'tenantID == "{self.conversation_analytics.tenantId}"'
+        # )
+        sql_example_filter_expr = ""
         self.conversation_analytics.sqlExampleVectorSearchTime, sql_examples_data = (
             milvus_manager.search_index(
                 transaction_id=self.conversation_analytics.conversationID,
                 collection_name=MilvusConfig().MILVUS_SQL_EXAMPLE_COLLECTION_NAME,
                 text_embedding=query_embedding,
                 return_fields=MilvusConfig().MILVUS_SQL_EXAMPLE_RETURN_FIELDS,
-                top_k=5,
+                top_k=MilvusConfig().MILVUS_TOP_SQL_EXAMPLES_K,
                 filter_expr=sql_example_filter_expr,
             )
         )
@@ -191,7 +193,7 @@ class biAssistant:
             tenant_id=self.conversation_analytics.tenantId,
             database_info=self.retrieval_logs.relevantColumns,
             example_sql=self.retrieval_logs.relevantSqlExamples,
-            relationship_diagram="",
+            relationship_diagram=DatabaseConfig().DATABASE_INFORMATION_PROMPT_TEMPLATE,
         )
         (
             self.conversation_analytics.sqlQueryChatCompletionTime,
@@ -210,13 +212,22 @@ class biAssistant:
         )
 
         # parsing sql gpt response
-        self.conversation_analytics.sqlQuery = sql_response_parser(
+        sql_flag, self.conversation_analytics.sqlQuery = sql_response_parser(
             transaction_id=self.conversation_analytics.conversationID,
             gpt_response=sql_chat_completion_response,
         )
+        if not sql_flag:
+            self.conversation_analytics.answer = self.conversation_analytics.sqlQuery
+            self.conversation_analytics.sqlQuery = ""
+            return self.conversation_analytics, self.retrieval_logs
         del sql_chat_completion_response
         logger.info(
             f"[biAssistant][get_answer][{self.conversation_analytics.conversationID}] - SQL query generated"
+        )
+
+        # yield f"[LOGS] - Validating SQL query"
+        self.conversation_analytics.sqlQuery = (
+            f"SET useMultistageEngine=true; {self.conversation_analytics.sqlQuery}"
         )
         # STEP 6 : Execute SQL query
         self.conversation_analytics.sqlQueryExecutionTime, sql_execution_response = (
@@ -228,10 +239,9 @@ class biAssistant:
         logger.info(
             f"[biAssistant][get_answer][{self.conversation_analytics.conversationID}] - SQL query executed"
         )
-        self.conversation_analytics.sqlQueryResponse = sql_execution_response.to_dict(
-            orient="records"
+        self.conversation_analytics.sqlQueryResponse = sql_execution_response.to_json(
+            orient="records", date_format="iso"
         )
-
         sql_result_markdown = sql_execution_response.to_markdown()
         sql_result_markdown = clean_string(sql_result_markdown)
 
@@ -262,7 +272,9 @@ class biAssistant:
         logger.info(
             f"[biAssistant][get_answer][{self.conversation_analytics.conversationID}] - Answer generated"
         )
-        if not sql_execution_response.empty:
+        if not sql_execution_response.empty and should_generate_chart(
+            sql_execution_response
+        ):
             # STEP 8 : Generate Graph
             logger.info(
                 f"[biAssistant][get_answer][{self.conversation_analytics.conversationID}] - Generating Graph"
