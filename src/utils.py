@@ -2,6 +2,8 @@ import re
 from partialjson.json_parser import JSONParser
 from typing import Tuple, Dict
 from src.adapters.loggingmanager import logger
+from src.adapters.milvusmanager import milvus_manager
+from src.adapters.openaimanager import openai_manager
 from src.custom_exception import CustomException
 from config import DatabaseConfig
 import pandas as pd
@@ -12,29 +14,38 @@ from fastapi.responses import JSONResponse
 from src.types import (
     ConversationAnalyticsModel,
     APIResponseModel,
+    SqlExampleVectorRecord,
 )
 import sqlparse
 import sqlglot
+import pytz
+from datetime import datetime
+import urllib.parse
+from bs4 import BeautifulSoup
+
 
 return_key_dialect = list(DatabaseConfig().DIALECT.keys())[0]
 prompt_dialect = DatabaseConfig().DIALECT[return_key_dialect]
+tables_relationship = DatabaseConfig().TABLE_RELATIONSHIPS
+database_relationship_description = DatabaseConfig().DATABASE_RELATIONSHIPS_DESCRIPTION
 
 
 def extract_and_format_metadata(columns_retrieved_data):
     relevant_metadata = {}
 
     for record in columns_retrieved_data[0]:
-        entity = record["entity"]
-        table_name = entity["tableName"]
-        column_info = {
-            "columnName": entity["columnName"],
-            "columnIsPrimaryKey": entity["columnIsPrimaryKey"],
-            "columnDescription": entity["columnDescription"],
-            "columnDataType": entity["columnDataType"],
-            "columnSampleValue": entity["columnSampleValue"],
-        }
-        relevant_metadata.setdefault(table_name, []).append(column_info)
-
+        if record["distance"] > 0.7:
+            entity = record["entity"]
+            table_name = entity["tableName"]
+            column_info = {
+                "columnName": entity["columnName"],
+                # "columnIsPrimaryKey": entity["columnIsPrimaryKey"],
+                "columnDescription": entity["columnDescription"],
+                "columnDataType": entity["columnDataType"],
+                "columnSampleValue": entity["columnSampleValue"],
+            }
+            relevant_metadata.setdefault(table_name, []).append(column_info)
+    # print(relevant_metadata)
     # Generate formatted metadata string
     lines = []
     for table_idx, (table_name, columns) in enumerate(
@@ -43,10 +54,9 @@ def extract_and_format_metadata(columns_retrieved_data):
         lines.append(f"## TABLE {table_idx}: `{table_name}`\nCOLUMNS:")
         for col_idx, column in enumerate(columns, start=1):
             lines.append(
-                f"- Column {col_idx}: `{column['columnName']}`\n"
-                f"      * Is Primary Key: {column['columnIsPrimaryKey']}\n"
+                f"  -`{column['columnName']}`- {column['columnDataType']}\n"
                 f"      * Description: {column['columnDescription']}\n"
-                f"      * Data Type: {column['columnDataType']}\n"
+                # f"      * Data Type: {column['columnDataType']}\n"
                 f"      * Sample Value:\n{column['columnSampleValue']}\n"
             )
 
@@ -55,14 +65,17 @@ def extract_and_format_metadata(columns_retrieved_data):
 
 def format_sql_examples(retrieved_sql_example_data):
     formatted_sql_examples = []
-    for record in retrieved_sql_example_data[0]:
-        if record["distance"] > 0.75:
-            formatted_sql_examples.append(
-                {
-                    "question": record["entity"]["question"],
-                    "sqlQuery": record["entity"]["sqlQuery"],
-                }
-            )
+    for record in retrieved_sql_example_data[0][::-1]:
+        print(
+            f"Distance: {record['distance']}, Question: {record['entity']['question']}"
+        )
+        # if record["distance"] > 0.8:
+        formatted_sql_examples.append(
+            {
+                "question": record["entity"]["question"],
+                "sqlQuery": record["entity"]["sqlQuery"],
+            }
+        )
     return formatted_sql_examples
 
 
@@ -136,22 +149,27 @@ def is_sql_valid(sql: str) -> bool:
 
 
 def sql_response_parser(transaction_id: str, gpt_response: Dict) -> Tuple[str]:
-    print(gpt_response)
     parser = JSONParser()
     sql_query = None
     flag = False
     try:
         parsed_response = parser.parse(gpt_response["choices"][0]["message"]["content"])
-        print(parsed_response)
+        print("&&")
+        print(
+            f"[utils][sql_response_parser][{transaction_id}] - Parsed Response: {parsed_response}"
+        )
         try:
             sql_query = parsed_response[f"{return_key_dialect}_query"]
-            # parsed = sqlglot.parse_one(sql_query, dialect="presto")
+            # parsed = sqlglot.parse_one(sql_query, dialect="postgresql")
             # if "limit" not in sql_query.lower():
             #     sql_query += " LIMIT 10"
             if is_sql_valid(sql_query):
                 flag = True
             if ";" not in sql_query:
                 sql_query += ";"
+
+            # remove anything after the first semicolon
+            sql_query = sql_query.split(";")[0].strip() + ";"
 
             assert isinstance(sql_query, str), "invalid sql format"
             logger.info(
@@ -172,6 +190,7 @@ def sql_response_parser(transaction_id: str, gpt_response: Dict) -> Tuple[str]:
             f"[utils][sql_response_parser][{transaction_id}] Error: {str(response_parser_exc)}"
         )
         raise CustomException(error="Openai answer parsing failed")
+    print(f"[utils][sql_response_parser][{transaction_id}] - SQL Query: {sql_query}")
     return flag, sql_query
 
 
@@ -202,11 +221,11 @@ def sql_response_parser_for_deepseek(
             .split("\n```")[0]
             .strip()
         )
-        if "limit" not in sql_query.lower():
-            if ";" in sql_query:
-                sql_query = sql_query.replace(";", " LIMIT 10;")
-            else:
-                sql_query += " LIMIT 10;"
+        # if "limit" not in sql_query.lower():
+        #     if ";" in sql_query:
+        #         sql_query = sql_query.replace(";", " LIMIT 10;")
+        #     else:
+        #         sql_query += " LIMIT 10;"
         # parsed = sqlglot.parse_one(sql_query, dialect="presto")
         if is_sql_valid(sql_query):
             flag = True
@@ -446,3 +465,153 @@ def should_generate_chart(df: pd.DataFrame) -> bool:
         return True
 
     return False
+
+
+# def format_database_relationship(retrived_tables: list) -> str:
+#     idx = 1
+#     relationships_string = ""
+#     tables_set = set(retrived_tables)
+#     for table in retrived_tables:
+#         if table in tables_relationship:
+#             relationships_string += f"Table {idx}: {table}\n"
+#             relationships = tables_relationship[table]
+#             for parent_column, child_column in relationships.items():
+#                 if child_column.split(".")[0] in tables_set:
+#                     relationships_string += (
+#                         f"  - {table}.{parent_column} -> {child_column}\n"
+#                     )
+#             idx += 1
+#             relationships_string += "\n"
+#     idx = 1
+#     for table, description in database_relationship_description.items():
+#         if table in tables_set:
+#             relationships_string += f"{idx}. {description}\n"
+#             idx += 1
+
+#     return relationships_string.strip()
+
+
+def format_database_relationship(retrieved_tables: list) -> str:
+    idx = 1
+    relationships_string = ""
+    tables_set = set(retrieved_tables)
+
+    # First part: show only tables that have valid relationships
+    for table in retrieved_tables:
+        valid_relationships = []
+        if table in tables_relationship:
+            for parent_column, child_column in tables_relationship[table].items():
+                if child_column.split(".")[0] in tables_set:
+                    valid_relationships.append((parent_column, child_column))
+
+        if valid_relationships:
+            relationships_string += f"Table {idx}: {table}\n"
+            for parent_column, child_column in valid_relationships:
+                relationships_string += (
+                    f"  - {table}.{parent_column} -> {child_column}\n"
+                )
+            relationships_string += "\n"
+            idx += 1
+
+    # Second part: add unique descriptions only for listed tables
+    seen_descriptions = set()
+    idx = 1
+    for table in retrieved_tables:
+        description = database_relationship_description.get(table)
+        if description and description not in seen_descriptions:
+            seen_descriptions.add(description)
+            relationships_string += f"{idx}. {description}\n"
+            idx += 1
+
+    return relationships_string.strip()
+
+
+def insert_into_vector_db(
+    transaction_id: str, tennant_id: str, user_text: str, corrected_sqlquery: str
+) -> Dict:
+
+    data = SqlExampleVectorRecord(
+        tenantID=tennant_id,
+        question=user_text,
+        sqlQuery=corrected_sqlquery,
+        questionEmbeddings=openai_manager.create_embedding(
+            text=user_text,
+            transaction_id=transaction_id,
+        )[1]["data"][0]["embedding"],
+    ).model_dump()
+    _, inset_res = milvus_manager.insert_data(
+        transaction_id=transaction_id,
+        collection_name=milvus_manager.MILVUS_SQL_EXAMPLE_COLLECTION_NAME,
+        data=data,
+    )
+
+    res = {"insert_count": inset_res["insert_count"], "ids": inset_res["ids"]}
+    return res
+
+
+def epoch_to_human_readable(epoch_time: int, tz: str = "UTC") -> str:
+    try:
+        timezone = pytz.timezone(tz)
+        dt = datetime.fromtimestamp(epoch_time, tz=timezone)
+        return dt.strftime("%Y-%m-%d %H:%M:%S %Z")
+    except Exception as e:
+        return f"Error: {e}"
+
+
+def convert_epoch_columns_to_str(
+    df: pd.DataFrame, timezone: str = "UTC"
+) -> pd.DataFrame:
+    """
+    Detects epoch columns and converts them to formatted datetime strings.
+    Format: YYYY-MM-DD HH:MM:SS TZ
+    """
+    df = df.copy()
+    tz = pytz.timezone(timezone)
+
+    for col in df.select_dtypes(include=["int64", "float64"]).columns:
+        sample = df[col].dropna().iloc[0] if not df[col].dropna().empty else None
+
+        if sample is None:
+            continue
+
+        try:
+            # Epoch in ms
+            if sample > 1e12:
+                df[col] = df[col].apply(
+                    lambda x: datetime.fromtimestamp(x / 1000, tz=pytz.utc)
+                    .astimezone(tz)
+                    .strftime("%Y-%m-%d %H:%M:%S %Z")
+                )
+            # Epoch in sec
+            elif 1e9 < sample < 1e12:
+                df[col] = df[col].apply(
+                    lambda x: datetime.fromtimestamp(x, tz=pytz.utc)
+                    .astimezone(tz)
+                    .strftime("%Y-%m-%d %H:%M:%S %Z")
+                )
+        except Exception:
+            pass
+
+    return df
+
+
+def cleanse_bytes(df) -> pd.DataFrame:
+    """Decode any bytes/bytearray cells to UTF-8, replacing undecodable bytes."""
+    return df.applymap(
+        lambda v: (
+            v.decode("utf-8", errors="replace")  # -> str with � for bad bytes
+            if isinstance(v, (bytes, bytearray))
+            else v
+        )
+    )
+
+
+def decode_html(val):
+    if pd.isnull(val) or not isinstance(val, str):
+        return val
+    try:
+        decoded = urllib.parse.unquote(val)
+        cleaned = BeautifulSoup(decoded, "html.parser").get_text(separator=" ")
+        return cleaned.strip()
+    except Exception:
+        return val

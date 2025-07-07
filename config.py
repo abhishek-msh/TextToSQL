@@ -1,4 +1,5 @@
 import os
+import json
 
 
 class DatabaseConfig:
@@ -6,21 +7,54 @@ class DatabaseConfig:
         """
         Contains all the configurations related to the database
         """
-        self.DIALECT = {"apache_pinot": "Apache Pinot SQL (MYSQL_ANSI dialect)"}
-        self.TEXT_TO_SQL_PROMPT_TEMPLATE = """Apache Pinot is a real-time distributed OLAP datastore designed to answer OLAP queries with low latency. Writing SQL queries for Pinot is somewhat similar to standard SQL, but with some differences due to Pinot's architecture and optimizations.
-1. In Apache Pinot SQL:
-    - Double quotes(") are used to force string identifiers, e.g. column name.
-    - Single quotes(') are used to enclose string literals.
-    Mis-using those might cause unexpected query results:
-    E.g.
-    - WHERE a='b' means the predicate on the column a equals to a string literal value 'b'
-    - WHERE a="b" means the predicate on the column a equals to the value of the column b
-2. Apache Pinot doesn't currently support injecting functions.  Functions have to be implemented within Pinot
-3. Use `now` function to get the current time as epoch millis.
-4. Use `DATETIMECONVERT` function to Converts the value from a column that contains a timestamp into another time unit and buckets based on the given time granularity.
-5. Use `DATETRUNC` function to Converts the value into a specified output granularity seconds since UTC epoch that is bucketed on a unit in a specified timezone.
-6. Pinot’s SQL parser only accepts the plain-ASCII operators >= and <=."""
-        self.DATABASE_INFORMATION_PROMPT_TEMPLATE = """"""
+        self.DIALECT = {"postgresql": "PostgreSQL"}
+        self.TEXT_TO_SQL_PROMPT_TEMPLATE = """PostgreSQL is a powerful, standards-compliant relational database that adds many modern extensions. Keep these quick tips in mind when crafting SQL:
+
+1. Identifier vs literal quoting
+   • Double quotes (") preserve case and allow reserved words as identifiers  
+     ⇒ SELECT "users", "orderTotal" FROM sales;  
+   • Single quotes (') delimit string literals  
+     ⇒ WHERE status = 'shipped';  
+     Mis-quoting (e.g. WHERE a="b") will make PostgreSQL look for a column called b instead of the string 'b'.
+
+2. Extensibility & SQL-injection safety
+   • PostgreSQL supports user-defined functions and procedures via CREATE FUNCTION/PROCEDURE in PL/pgSQL, SQL, Python (PL/Python), etc.  
+   • Always use **parameterized queries** (e.g. psycopg placeholders %s) instead of string concatenation to avoid injection attacks.
+
+3. Current time & epoch conversion
+   • now() and current_timestamp return TIMESTAMP WITH TIME ZONE.  
+   • EXTRACT(EPOCH FROM now()) * 1000 gives epoch-milliseconds if you need Unix time
+
+4. Time-zone handling & bucketing
+   • Use AT TIME ZONE to convert: created_at AT TIME ZONE 'UTC' AS created_utc  
+   • Use date_trunc('hour', ts) or date_trunc('day', ts) to bucket timestamps.  
+   • Combine with now(): date_trunc('day', now()) for “today” rounded to midnight.
+
+5. Time-series scaffolding
+   • generate_series(start_ts, end_ts, interval '1 hour') produces gap-free rows; LEFT JOIN it with aggregates to expose missing periods.
+
+6. Statistics & percentiles
+   • percentile_cont(p) WITHIN GROUP (ORDER BY val) → continuous percentile  
+   • percentile_disc(p) for discrete values.  
+   • For large, streaming data use extensions such as **tdigest_agg** or **approx_percentile** (in pg_partman/Timescale Toolkit) for faster, memory-bound summaries.
+
+7. Performance diagnostics
+   • Use EXPLAIN (ANALYZE, BUFFERS) to see the real plan and costs.  
+   • Choose the right index: B-tree (default) for equality/range, GIN for jsonb/array containment, GiST for geometric/range types, BRIN for huge append-only tables.
+
+Following these conventions will help you write clear, efficient, and secure PostgreSQL queries that take full advantage of the database’s rich feature set."""
+
+        # 6. Quote the table in double-quotes and give everything an alias—the join works and the query is easy to read.
+
+        self.DATABASE_INFORMATION_PROMPT_TEMPLATE = ""
+        with open("data/5DayDatabaseInformation.txt", "r") as file:
+            self.DATABASE_INFORMATION_PROMPT_TEMPLATE = file.read()
+
+        with open("data/tableRelationships.json", "r") as file:
+            self.TABLE_RELATIONSHIPS = json.load(file)
+
+        with open("data/databaseRelationshipsDescription.json", "r") as file:
+            self.DATABASE_RELATIONSHIPS_DESCRIPTION = json.load(file)
 
 
 class OpenAIConfig:
@@ -47,11 +81,11 @@ class SqlConfig:
         Contains all the configurations related to the SQL server
         """
         # Credentials
-        # self.SQL_SERVER = "localhost"
-        # self.SQL_USERNAME = "admin"
-        # self.SQL_PASSWORD = "VMKSfewtWzad"
-        # self.SQL_DATABASE = "postgres"
-        # self.SQL_PORT = 5432
+        self.SQL_SERVER = ""
+        self.SQL_USERNAME = ""
+        self.SQL_PASSWORD = ""
+        self.SQL_DATABASE = ""
+        self.SQL_PORT = 5432
 
         self.DB_PATH = os.getenv("DB_PATH")
         self.CONVERSATION_ANALYTICS_TABLE = os.getenv("CONVERSATION_ANALYTICS_TABLE")
@@ -87,7 +121,6 @@ class MilvusConfig:
         self.MILVUS_COLUMN_RETURN_FIELDS = [
             "tableName",
             "columnName",
-            "columnIsPrimaryKey",
             "columnDescription",
             "columnDataType",
             "columnSampleValue",

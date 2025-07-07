@@ -13,13 +13,13 @@ def azure_logger():
         logger: Logger object
     """
     logging.basicConfig(
-        filename="../5DayNltoSQL/logs.log",
+        filename="logs.log",
         filemode="a",
         format="%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s",
         datefmt="%H:%M:%S",
         level=logging.INFO,
     )
-    logger = logging.getLogger("AI AI Bot")
+    logger = logging.getLogger("AI Bot")
     logger.info("Logger Initialised..")
     return logger
 

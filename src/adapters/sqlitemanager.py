@@ -193,4 +193,4 @@ class SQLiteManager(SqlConfig):
                 connection.close()
 
 
-sql_manager = SQLiteManager()
+sqlite_manager = SQLiteManager()

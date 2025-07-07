@@ -76,6 +76,7 @@ class OpenaAIManager(OpenAIConfig):
         transaction_id: str = "root",
         temperature: float = 0.01,
         response_format={"type": "json_object"},
+        model: str = OpenAIConfig().CHATCOMPLETION_MODEL,
     ) -> Dict[Any, Any]:
         """
         Perform chat completion using OpenAI API.
@@ -85,6 +86,8 @@ class OpenaAIManager(OpenAIConfig):
             messages (List[Dict[str, str]]): List of messages in the conversation.
             temperature (float, optional): Controls the randomness of the output. Defaults to 0.
             max_tokens (int, optional): The maximum number of tokens in the response. Defaults to 500.
+            response_format (dict, optional): The format of the response. Defaults to {"type": "json_object"}.
+            model (str, optional): The model to use for chat completion. Defaults to OpenAIConfig().CHATCOMPLETION_MODEL.
 
         Returns:
             Dict[Any, Any]: The response from the OpenAI API.
@@ -100,7 +103,7 @@ class OpenaAIManager(OpenAIConfig):
         json_response = {}
         try:
             response = self.openai_client.chat.completions.create(
-                model=self.CHATCOMPLETION_MODEL,
+                model=model,
                 messages=messages,
                 temperature=temperature,
                 response_format=response_format,

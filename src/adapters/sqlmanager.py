@@ -8,6 +8,8 @@ from pandas.core.api import DataFrame
 from src.custom_exception import CustomException
 from src.adapters.loggingmanager import logger
 from sqlalchemy.exc import TimeoutError, ResourceClosedError, SQLAlchemyError
+import datetime
+from src.decorators import measure_time
 
 # disabling pyodbc default pooling
 pyodbc.pooling = False
@@ -115,6 +117,7 @@ class SQLManager(SqlConfig):
             if connection:
                 connection.close()
 
+    @measure_time
     def fetch_data(self, transaction_id: str, sql_query: str) -> DataFrame:
         """
         Fetches data from the database using the provided SQL query.
@@ -131,31 +134,45 @@ class SQLManager(SqlConfig):
         """
         connection = None
         try:
+            # Attempt with multistage engine first
             connection = self.engine.connect()
-            df = pd.read_sql(sql=text(sql_query), con=connection)
-            connection.close()
+            multistage_query = f"SET useMultistageEngine=true; {sql_query}"
+            connection = connection.execution_options(
+                use_multistage_engine=True,
+                queryOptions="useMultistageEngine=true",
+            )
+            df = pd.read_sql(
+                sql=text(multistage_query), con=connection, parse_dates=True
+            )
             logger.info(
-                f"[SQLManager][fetch_data][{transaction_id}] - Data Fetched Successfully"
+                f"[SQLManager][fetch_data][{transaction_id}] - Data fetched successfully with multistage"
             )
             return df
-        except (TimeoutError, ResourceClosedError, SQLAlchemyError) as exce:
-            logger.exception(
-                f"[SQLManager][fetch_data][{transaction_id}] Error: {str(exce)}"
+        except Exception as multistage_exc:
+            logger.warning(
+                f"[SQLManager][fetch_data][{transaction_id}] Multistage query failed: {str(multistage_exc)}"
             )
             if connection:
                 connection.close()
 
-            raise CustomException(error=self.sql_error, message=str(exce), result=[])
-        except Exception as fetch_data_exc:
-            logger.exception(
-                f"[SQLManager][fetch_data][{transaction_id}] Error: {str(fetch_data_exc)}"
-            )
-            if connection:
-                connection.close()
-
-            raise CustomException(
-                error=self.sql_error, message=str(fetch_data_exc), result=[]
-            )
+            try:
+                # Retry without multistage
+                connection = self.engine.connect()
+                df = pd.read_sql(sql=text(sql_query), con=connection)
+                logger.info(
+                    f"[SQLManager][fetch_data][{transaction_id}] - Data fetched successfully without multistage"
+                )
+                return df
+            except Exception as fetch_data_exc:
+                logger.exception(
+                    f"[SQLManager][fetch_data][{transaction_id}] General Error: {str(fetch_data_exc)}"
+                )
+                raise CustomException(
+                    error=self.sql_error, message=str(fetch_data_exc), result=[]
+                )
+            finally:
+                if connection:
+                    connection.close()
         finally:
             if connection:
                 connection.close()

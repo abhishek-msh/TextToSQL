@@ -1,0 +1,5 @@
+{
+  "TABLE A": {
+    "col A": "TABLE B.col A"
+  }
+}

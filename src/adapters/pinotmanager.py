@@ -49,13 +49,9 @@ class PinotManager(PinotConfig):
         self.pinot_error = "On-prem Pinot failed"
         ## Pinot Connection
         try:
-            connection_string = f"pinot+http://{self.PINOT_SERVER}:{self.PINOT_BROKER_PORT}/query/sql?controller={self.PINOT_SERVER}:{self.PINOT_CONTROLLER_PORT}/"
+            connection_string = f"pinot+http://{self.PINOT_BROKER_URL}:{self.PINOT_BROKER_PORT}/query/sql?controller={self.PINOT_CONTROLLER_URL}:{self.PINOT_CONTROLLER_PORT}/"
             self.engine = create_engine(
-                connection_string,
-                pool_pre_ping=True,
-                pool_size=5,
-                pool_recycle=1500,
-                connect_args={"queryOptions": "useMultistageEngine=true"},
+                connection_string, pool_pre_ping=True, pool_size=5, pool_recycle=1500
             )
             logger.info("[PinotManager] - Pinot Client initialized")
         except (TimeoutError, ResourceClosedError, SQLAlchemyError) as exce:
@@ -121,6 +117,65 @@ class PinotManager(PinotConfig):
             if connection:
                 connection.close()
 
+    # @measure_time
+    # def fetch_data(
+    #     self, transaction_id: str, sql_query: str
+    # ) -> Tuple[float, DataFrame]:
+    #     """
+    #     Fetches data from the database using the provided SQL query.
+
+    #     Args:
+    #         transaction_id (str): The ID of the transaction.
+    #         sql_query (str): The SQL query to execute.
+
+    #     Returns:
+    #         DataFrame: A pandas DataFrame containing the fetched data.
+
+    #     Raises:
+    #         CustomException: If there is an error while fetching the data.
+    #     """
+    #     multistage_condition = ["join", "union", "group by", "order by", "case"]
+    #     # If the query contains any of the multistage conditions, set useMultistage
+    #     # if any(condition in sql_query.lower() for condition in multistage_condition):
+    #     #     sql_query = f"SET useMultistageEngine=true; {sql_query}"
+    #     connection = None
+    #     try:
+    #         connection = self.engine.connect()
+    #         if any(
+    #             condition in sql_query.lower() for condition in multistage_condition
+    #         ):
+    #             sql_query = f"SET useMultistageEngine=true; {sql_query}"
+    #             connection = connection.execution_options(
+    #                 use_multistage_engine=True, queryOptions="useMultistageEngine=true"
+    #             )  # Enable multistage engine for the connection
+    #         df = pd.read_sql(sql=text(sql_query), con=connection)
+    #         connection.close()
+    #         logger.info(
+    #             f"[PinotManager][fetch_data][{transaction_id}] - Data Fetched Successfully"
+    #         )
+    #         return df
+    #     except (TimeoutError, ResourceClosedError, SQLAlchemyError) as exce:
+    #         logger.exception(
+    #             f"[PinotManager][fetch_data][{transaction_id}] Error: {str(exce)}"
+    #         )
+    #         if connection:
+    #             connection.close()
+
+    #         raise CustomException(error=self.pinot_error, message=str(exce), result=[])
+    #     except Exception as fetch_data_exc:
+    #         logger.exception(
+    #             f"[PinotManager][fetch_data][{transaction_id}] Error: {str(fetch_data_exc)}"
+    #         )
+    #         if connection:
+    #             connection.close()
+
+    #         raise CustomException(
+    #             error=self.pinot_error, message=str(fetch_data_exc), result=[]
+    #         )
+    #     finally:
+    #         if connection:
+    #             connection.close()
+
     @measure_time
     def fetch_data(
         self, transaction_id: str, sql_query: str
@@ -138,37 +193,46 @@ class PinotManager(PinotConfig):
         Raises:
             CustomException: If there is an error while fetching the data.
         """
-        # multistage_condition = ["join", "union", "group by", "order by", "case"]
-        # # If the query contains any of the multistage conditions, set useMultistage
-        # if any(condition in sql_query.lower() for condition in multistage_condition):
-        # sql_query = f"SET useMultistageEngine=true; {sql_query}"
         connection = None
         try:
+            # Attempt with multistage engine first
             connection = self.engine.connect()
-            df = pd.read_sql(sql=text(sql_query), con=connection)
-            connection.close()
+            multistage_query = f"SET useMultistageEngine=true; {sql_query}"
+            connection = connection.execution_options(
+                use_multistage_engine=True, queryOptions="useMultistageEngine=true"
+            )
+            df = pd.read_sql(
+                sql=text(multistage_query), con=connection, parse_dates=True
+            )
             logger.info(
-                f"[PinotManager][fetch_data][{transaction_id}] - Data Fetched Successfully"
+                f"[PinotManager][fetch_data][{transaction_id}] - Data fetched successfully with multistage"
             )
             return df
-        except (TimeoutError, ResourceClosedError, SQLAlchemyError) as exce:
-            logger.exception(
-                f"[PinotManager][fetch_data][{transaction_id}] Error: {str(exce)}"
+        except Exception as multistage_exc:
+            logger.warning(
+                f"[PinotManager][fetch_data][{transaction_id}] Multistage query failed: {str(multistage_exc)}"
             )
             if connection:
                 connection.close()
 
-            raise CustomException(error=self.pinot_error, message=str(exce), result=[])
-        except Exception as fetch_data_exc:
-            logger.exception(
-                f"[PinotManager][fetch_data][{transaction_id}] Error: {str(fetch_data_exc)}"
-            )
-            if connection:
-                connection.close()
-
-            raise CustomException(
-                error=self.pinot_error, message=str(fetch_data_exc), result=[]
-            )
+            try:
+                # Retry without multistage
+                connection = self.engine.connect()
+                df = pd.read_sql(sql=text(sql_query), con=connection)
+                logger.info(
+                    f"[PinotManager][fetch_data][{transaction_id}] - Data fetched successfully without multistage"
+                )
+                return df
+            except Exception as fetch_data_exc:
+                logger.exception(
+                    f"[PinotManager][fetch_data][{transaction_id}] General Error: {str(fetch_data_exc)}"
+                )
+                raise CustomException(
+                    error=self.pinot_error, message=str(fetch_data_exc), result=[]
+                )
+            finally:
+                if connection:
+                    connection.close()
         finally:
             if connection:
                 connection.close()

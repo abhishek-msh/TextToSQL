@@ -184,7 +184,7 @@ def main():
     email = st.sidebar.text_input("Email", value="abhishek@test.com")
     client_name = st.sidebar.text_input("Client Name", value="AI-nlToSql")
     tenant_id = st.sidebar.text_input(
-        "Tenant ID", value="23445e8b-74a4-4b8e-b88a-a13ba5721a58"
+        "Tenant ID", value="352a79b0-82d2-4cab-b130-338916ec86e9"
     )
     user_id = st.sidebar.text_input("User ID", value="abhishek")
 

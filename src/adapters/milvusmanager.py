@@ -117,5 +117,50 @@ class MilvusManager(MilvusConfig):
             )
             raise CustomException(error=self.milvus_error, message=str(exc))
 
+    @measure_time
+    def insert_data(
+        self,
+        transaction_id: str,
+        collection_name: str,
+        data: List[Dict[str, Any]],
+        flush: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Inserts data into a specified Milvus collection.
+
+        Args:
+            transaction_id (str): A unique identifier for the transaction.
+            collection_name (str): The name of the Milvus collection to insert data into.
+            data (List[Dict[str, Any]]): The data to be inserted into the collection.
+
+        Raises:
+            CustomException: If the collection does not exist or if there is an error during insertion.
+        """
+        if not self.check_collection_exists(transaction_id, collection_name):
+            raise CustomException(
+                error=self.milvus_error,
+                message=f"Collection {collection_name} does not exist",
+            )
+        try:
+            insert_res = self.milvus_client.insert(
+                collection_name=collection_name, data=data
+            )
+            if flush:
+                flush_res = self.milvus_client.flush(collection_name=collection_name)
+            logger.info(
+                f"[MilvusManager][insert_data] [{transaction_id}] - {insert_res['insert_count']} Data inserted successfully into collection {collection_name}"
+            )
+            return insert_res
+        except MilvusException as milvus_exc:
+            logger.exception(
+                f"[MilvusManager][insert_data] [{transaction_id}] - Failed to insert data into collection {collection_name}: {milvus_exc}"
+            )
+            raise CustomException(error=self.milvus_error, message=str(milvus_exc))
+        except Exception as exc:
+            logger.exception(
+                f"[MilvusManager][insert_data] [{transaction_id}] - Failed to insert data into collection {collection_name}: {exc}"
+            )
+            raise CustomException(error=self.milvus_error, message=str(exc))
+
 
 milvus_manager = MilvusManager()

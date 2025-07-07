@@ -5,7 +5,7 @@ from datetime import datetime
 from src.custom_exception import CustomException
 from pydantic import BaseModel, Field, PrivateAttr, field_validator
 from typing import Literal, Optional, Any, Dict, List, Optional
-from src.adapters.sqlitemanager import sql_manager
+from src.adapters.sqlitemanager import sqlite_manager
 
 
 class userFeedbackModel(BaseModel):
@@ -91,6 +91,29 @@ class GetAnswerModel(BaseModel):
             raise ValueError(
                 "Date must be in UTC format and follow the format YYYY-MM-DDTHH:MM:SS.fffZ"
             ) from utc_valid_exc
+
+
+class GetFixSqlModel(BaseModel):
+    """
+    GetFixSqlModel is a Pydantic model representing the structure of a request for obtaining a fixed SQL query in the NLtoSQL system.
+
+    Attributes:
+        clientName (Literal["AI-nlToSql"]): Name of the specific use case for this transaction.
+        tenantId (str): Unique identifier for the tenant.
+        userText (str): The query or input provided by the user.
+        correctSqlQuery (str): The correct SQL query provided by the user.
+    """
+
+    clientName: Literal["AI-nlToSql"] = Field(
+        description="Name of the specific use case for this transaction."
+    )
+    tenantId: str = Field(
+        description="Unique identifier for the tenant",
+    )
+    userText: str = Field(description="The query or input provided by the user.")
+    correctSqlQuery: str = Field(
+        description="The correct SQL query provided by the user.",
+    )
 
 
 class ConversationAnalyticsModel(GetAnswerModel):
@@ -226,7 +249,7 @@ class ConversationAnalyticsModel(GetAnswerModel):
     sqlQueryExecutionTime: float = Field(
         default=0, description="Time taken to execute the SQL query."
     )
-    sqlQueryResponse = Field(
+    sqlQueryResponse: Any = Field(
         default=None,
         description="Response from the SQL query execution.",
     )
@@ -314,9 +337,9 @@ class ConversationAnalyticsModel(GetAnswerModel):
         current_time = datetime.now()
         self.responseTime = (current_time - self._start_time).total_seconds()
         try:
-            sql_manager.insert_data(
+            sqlite_manager.insert_data(
                 transaction_id=self.conversationID,
-                table_name=sql_manager.CONVERSATION_ANALYTICS_TABLE,
+                table_name=sqlite_manager.CONVERSATION_ANALYTICS_TABLE,
                 df=pd.DataFrame([self.to_dict()]),
             )
             # # change the type of the string to list
@@ -406,9 +429,9 @@ class RetrievalLogsModel(BaseModel):
                 attaching the provided conversation_analytics to it.
         """
         try:
-            sql_manager.insert_data(
+            sqlite_manager.insert_data(
                 transaction_id=self.conversationID,
-                table_name=sql_manager.RETRIEVAL_HISTORY_TABLE,
+                table_name=sqlite_manager.RETRIEVAL_HISTORY_TABLE,
                 df=pd.DataFrame([self.to_dict()]),
             )
         except CustomException as custom_exc:
@@ -436,6 +459,9 @@ class TablesVectorRecord(BaseModel):
     Attributes:
         tableName (str): Name of the table.
         tableDescription (str): Description of the table.
+        tableDDL (str): DDL (Data Definition Language) statement for the table.
+        tableCluster (str): Cluster to which the table belongs.
+        tableSampleValues (str): Sample values from the table.
         tableDescriptionEmbeddings (List[float]): Embeddings for the table description.
 
     Methods:
@@ -447,6 +473,18 @@ class TablesVectorRecord(BaseModel):
     )
     tableDescription: str = Field(
         description="Description of the table",
+    )
+    tableDDL: str = Field(
+        default="",
+        description="DDL (Data Definition Language) statement for the table.",
+    )
+    tableCluster: str = Field(
+        default="",
+        description="Cluster to which the table belongs.",
+    )
+    tableSampleValues: str = Field(
+        default="",
+        description="Sample values from the table.",
     )
     tableDescriptionEmbeddings: List[float] = Field(
         description="Embeddings for the table description",
@@ -460,7 +498,7 @@ class ColumnsVectorRecord(BaseModel):
     Attributes:
         tableName (str): Name of the table.
         columnName (str): Name of the column.
-        columnIsPrimaryKey (str): Flag to indicate if the column is a primary key.
+        # columnIsPrimaryKey (str): Flag to indicate if the column is a primary key.
         columnDescription (str): Description of the column.
         columnDataType (str): Data type of the column.
         columnSampleValue (str): Sample value of the column.
@@ -476,10 +514,10 @@ class ColumnsVectorRecord(BaseModel):
     columnName: str = Field(
         description="Name of the column",
     )
-    columnIsPrimaryKey: str = Field(
-        default="false",
-        description="Flag to indicate if the column is a primary key.",
-    )
+    # columnIsPrimaryKey: str = Field(
+    #     default="false",
+    #     description="Flag to indicate if the column is a primary key.",
+    # )
     columnDescription: str = Field(
         description="Description of the column",
     )
