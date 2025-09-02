@@ -3,7 +3,6 @@
 [![Python](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.111.1-009688.svg)](https://fastapi.tiangolo.com/)
 [![Streamlit](https://img.shields.io/badge/Streamlit-Latest-FF4B4B.svg)](https://streamlit.io/)
-[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 A powerful multi-tenant BI Assistant that transforms natural language questions into accurate SQL queries and compelling visualizations. Built with modern AI/ML technologies and designed for enterprise-scale analytics.
 
@@ -20,7 +19,6 @@ A powerful multi-tenant BI Assistant that transforms natural language questions 
 - [🛠️ Customization](#️-customization)
 - [🐛 Troubleshooting](#-troubleshooting)
 - [🤝 Contributing](#-contributing)
-- [📄 License](#-license)
 
 ## ✨ Features
 
@@ -725,10 +723,6 @@ We welcome contributions to TextToSQL! Here's how you can help:
 - **Performance Optimization**: Improve query speed and accuracy
 - **Documentation**: Improve guides and examples
 - **Testing**: Expand test coverage
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## 👏 Acknowledgments
 
